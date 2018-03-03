@@ -8,9 +8,6 @@ use Illuminate\Container\Container;
 use Whoops\Run;
 use Whoops\Handler\PrettyPageHandler;
 
-require 'config.php';
-require __DIR__.'/../vendor/autoload.php';
-
 class App {
     public $db;
     public $conf;
