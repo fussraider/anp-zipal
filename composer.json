@@ -1,0 +1,17 @@
+{
+    "name": "fussraider/anp-zipal",
+    "description": "XML-file generator for zipal.ru from ANPLUS-database (Joomla)",
+    "type": "project",
+    "require": {
+        "illuminate/database": "^5.6",
+        "filp/whoops": "^2.1",
+        "illuminate/events": "^5.6"
+    },
+    "license": "GPL-v3",
+    "authors": [
+        {
+            "name": "Constantine Avdeev",
+            "email": "me@fussraider.ru"
+        }
+    ]
+}
