@@ -10,5 +10,5 @@ require __DIR__.'/vendor/autoload.php';
 $app = new App;
 
 use Controllers\GenerateXmlFeedController;
-$test = new GenerateXmlFeedController;
+$app->test = new GenerateXmlFeedController($app);
 ?>

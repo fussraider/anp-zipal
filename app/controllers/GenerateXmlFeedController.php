@@ -6,17 +6,29 @@ use Models\Users;
 use Models\UserProfiles;
 use \FluidXml\FluidXml;
 use \FluidXml\FluidNamespace;
+use \App\App;
 
 class GenerateXmlFeedController{
 
-    public function __construct(){
+
+    /**
+     * При создании экземпляра класса принимаем на вход объект приложения для работы с 
+     * конфигом и прочими дочерними объектами класса приложения
+     * 
+     * @param \App\App $app
+     * @return mixed
+     */
+    public function __construct(App $app){
+        $this->app = $app;
         $query = AnpProperties::where('published', '1')->get();
     
         $xml = new FluidXml(null, ['encoding'   => 'UTF-8' ]);
 
         $xml->addChild('MassUploadRequest', true, ['xmlns' => 'http://assis.ru/ws/api', 'timestamp' => time()]);
+        $root = $xml->query('//MassUploadRequest');
 
         foreach($query as $object){
+            $obj = new FluidXml(null);
             $arr = [
                 'object' => [
                     '@externalId' => $object->id,
@@ -50,24 +62,51 @@ class GenerateXmlFeedController{
                                 '@name' => $this->getUserName($object->responsible_officer),
                                 '@phone' => $this->getUserPhone($object->responsible_officer),
                                 '@email' => $this->getUserEmail($object->responsible_officer),
-                                '@company' => 'АН Матвеев Дом'
+                                '@company' => $this->app->conf->agency_name
                             ]
                         ]
                     ],
                 ]
             ];
 
-            if($object->transaction_type == 'RENTING'){
-                $arr['object']['request']['common']['@deposit'] = $object->deposit;
-                $arr['object']['request']['common']['@priceType'] = $this->getPriceType($object->rate_frequency);
-                $arr['object']['request']['common']['@period'] = 'LONG'; //пока так, т.к. в админке нет поля для выбора этого параметра: https://zipal.ru/developers/xml#Period
+            
+            $obj->addChild($arr);
+            $common = $obj->query('//object//request//common');
+
+           if($object->transaction_type == 'RENTING'){
+                $common->setAttribute([
+                    'deposit' => ($object->deposit)*100,
+                    'priceType' => $this->getPriceType($object->rate_frequency),
+                    'period' => 'LONG' //пока так, т.к. в админке нет поля для выбора этого параметра: https://zipal.ru/developers/xml#Period
+                ]);
             }
+
+
 
             if(!empty($object->video)){
-                $arr['object']['request']['common']['@video'] = $object->video;
+                $common->setAttribute(['video' => $object->video]);
             }
 
-            $object_xml = $xml->addChild($arr);
+            if(!empty($object->images)){
+                $images_arr = \json_decode($object->images, true);
+                if($images_arr){
+                    $count = 0;
+                    foreach($images_arr as $img){
+                        if($count < 20){
+                            $common->addChild([
+                                'photos' => [
+                                    '@description' => (!empty($img['title']) ? $img['title'].' ' : null) . (!empty($img['description']) ? $img['description'] : null),
+                                    '@url'  => $img['name']
+                                ]
+                            ]);
+                        }else
+                            break;
+                        $count++;
+                    }
+                }
+            }
+
+            $root->addChild($obj);
         }
 
 
