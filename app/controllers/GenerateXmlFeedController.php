@@ -28,6 +28,7 @@ class GenerateXmlFeedController{
         $root = $xml->query('//MassUploadRequest');
 
         foreach($query as $object){
+            $obj_request_type = $this->getRequestType($object->transaction_type, $object->type_id);
             $obj = new FluidXml(null);
             $arr = [
                 'object' => [
@@ -35,7 +36,7 @@ class GenerateXmlFeedController{
                     '@publish'  => 'true',
                     'request' => [
                         '@xmlns:xsi' => 'http://www.w3.org/2001/XMLSchema-instance',
-                        '@xsi:type' => $this->getRequestType($object->transaction_type, $object->type_id),
+                        '@xsi:type' => $obj_request_type,
                         'common' => [
                             '@name' => $object->title,
                             '@description' => $object->description,
@@ -64,7 +65,8 @@ class GenerateXmlFeedController{
                                 '@email' => $this->getUserEmail($object->responsible_officer),
                                 '@company' => $this->app->conf->agency_name
                             ]
-                        ]
+                        ],
+                        'specific' => []
                     ],
                 ]
             ];
@@ -72,20 +74,17 @@ class GenerateXmlFeedController{
             
             $obj->addChild($arr);
             $common = $obj->query('//object//request//common');
+            $specific = $obj->query('//object//request//specific');
 
-           if($object->transaction_type == 'RENTING'){
+            if($object->transaction_type == 'RENTING')
                 $common->setAttribute([
                     'deposit' => ($object->deposit)*100,
                     'priceType' => $this->getPriceType($object->rate_frequency),
                     'period' => 'LONG' //пока так, т.к. в админке нет поля для выбора этого параметра: https://zipal.ru/developers/xml#Period
                 ]);
-            }
 
-
-
-            if(!empty($object->video)){
+            if(!empty($object->video))
                 $common->setAttribute(['video' => $object->video]);
-            }
 
             if(!empty($object->images)){
                 $images_arr = \json_decode($object->images, true);
@@ -104,6 +103,60 @@ class GenerateXmlFeedController{
                         $count++;
                     }
                 }
+            }
+
+            if($obj_request_type == 'FlatSellRequestType' || $obj_request_type == 'FlatRentRequestType'){
+                $specific->setAttribute([
+                        'type' => $this->getHouseType($object),
+                        'roomsCount' => $object->rooms_offered ? $object->rooms_offered : $object->rooms,
+                        'roomsCountTotal' => $object->rooms,
+                        'separatedRoomsCount' => $object->rooms,
+                        'floorNumber' => $object->floor,
+                        'floorsNumber' => $object->floors_number,
+                        'material' => $this->getMaterialType($object->material_id)
+                ]);
+
+                if($object->living_space > 0)
+                    $specific->setAttribute(['usefulSquare' => $object->living_space]);
+                
+                if($object->kitchen_space > 0)
+                    $specific->setAttribute(['kitchenSquare' => $object->kitchen_space]);
+
+                if($object->celling > 0)
+                    $specific->setAttribute(['ceilingHeight' => (int)($object->celling)*100]);
+                
+                if($object->condition_id)
+                    $specific->setAttribute(['renovation' => $this->getRenovationType($object->condition_id)]);
+
+                if($object->separateWcsCount != '0' || $object->combinedWcsCount != '0'){
+                    $toilet = $this->getToiletType($object);
+
+                    if($toilet)
+                        $specific->setAttribute(['toilet' => $toilet]);
+                }
+
+                if($object->balconiesCount != '0' || $object->loggiasCount != '0'){
+                    $balcony = $this->getBalcony($object);
+                    if($balcony)
+                        $specific->setAttribute(['balcony' => $balcony]);                        
+                }
+
+                if($object->heating_type != '0'){
+                    $heating = false;
+                    switch($object->heating_type){
+                        case '1':
+                            $heating = 'CENTRAL';
+                            break;
+                        case '2':
+                            $heating = 'LOCAL';
+                            break;
+                    }
+
+                    if($heating){
+                        $specific->setAttribute(['heating' => $heating]);
+                    }
+                }
+
             }
 
             $root->addChild($obj);
@@ -225,5 +278,220 @@ class GenerateXmlFeedController{
             $object_alias = AnpProperties::where('id', $object_id)->first()->alias;
         }
         return 'https://www.matveevdom.ru/component/anp/'.(int)$object_id.'-'.trim($object_alias);
+    }
+
+    /**
+     * Метод возвращает тип квартиры, в соответствии со спецификами zipal.ru: 
+     * FLAT         -   Типовая
+     * STUDIO       -  	Студия
+     * ELITE        -  	Элитная
+     * PENTHOUSE    -   Пентхаус
+     * APARTMENTS   -   Апартаменты
+     * HOSTEL       -  	Общежитие
+     * MALOSEMEIKA  -   Малосемейка
+     * GOSTINKA     -  	Гостинка
+     * HRUSHEVKA    -   Хрущевка
+     * STALINKA     -  	Сталинка
+     * 
+     * На вход принимается объект объявления.
+     * Значения в БД сайта:
+     *      1   - Улучшеная планировка
+     *      2   - Типовая планировка
+     *      3   - Хрущевка
+     *      4   - Полногабаритная
+     *      5   - Общежитие
+     *      6   - Студия
+     *      7   - Эконом класс
+     *      8   - Элитная
+     *      9   - Малосемейка
+     *      10  - Ленинградская
+     *      11  - 2х уровневая
+     *      12  - Гостинка
+     *      13  - Малоэтажка
+     *      14  - Новая
+     *      15  - моспроект
+     * 
+     * @param AnpProperties $object
+     * @return string
+     */
+    private function getHouseType(AnpProperties $object){
+        $result = 'undefinded';
+
+        if($object->pent == '1')
+            return 'PENTHOUSE';
+        elseif($object->apart == '1')
+            return 'APARTMENTS';
+        else{
+            switch($object->housetype_id){
+                case '1':
+                case '2':
+                    $result = 'FLAT';
+                    break;
+                case '3':
+                    $result = 'HRUSHEVKA';
+                    break;
+                case '4':
+                    $result = '??'; //Полногабаритная
+                    break;
+                case '5':
+                    $result = 'HOSTEL';
+                    break;
+                case '6':
+                    $result = 'STUDIO';
+                    break;
+                case '7':
+                    $result = '??'; //Эконом класс
+                    break;
+                case '8':
+                    $result = 'ELITE';
+                    break;
+                case '9':
+                    $result = 'MALOSEMEIKA';
+                    break;
+                case '10':
+                    $result = '??'; //Ленинградская
+                    break;
+                case '11':
+                    $result = '??';  // 2х уровневая
+                    break;
+                case '12':
+                    $result = 'GOSTINKA';
+                    break;
+                case '13':
+                    $result = '??'; //Малоэтажка
+                    break;
+                case '14':
+                    $result = '??'; //Новая
+                    break;
+                case '15':
+                    $result = '??'; //моспроект
+                    break;
+            }
+        }
+        
+        return $result;
+    }
+
+    /**
+     * Метод возвращает тип материала стен в соответствии с классификацией zipal.ru:
+     * 
+     * BRICK	    -   Кирпич
+     * CONCRETE	    -   Железобетон
+     * PANEL	    -   Панель
+     * MONOLITH	    -   Монолит
+     * MONOBRICK    -   Монолит-кирпич
+     * TIMBER	    -   Брус
+     * WOOD	        -   Дерево
+     * BLOCK	    -   Блок
+     * OLD_FUND	    -   Старый фонд
+     * 
+     * На вход принимается значение material_id из объекта объявления:
+     * 1    - 	панель
+     * 2    - 	кирпич
+     * 3    - 	монолит
+     * 4    - 	кирпично-монолитный
+     * 5    - 	блочный
+     * 6    - 	деревянный
+     * 7    - 	сталинский
+     * 8    - 	каркасно-щитовой
+     * 9    - 	старый фонд
+     * 
+     * @param integer $material_id
+     * @return string
+     */
+    private function getMaterialType($material_id){
+        $array = [
+            '1' => 'PANEL',
+            '2' => 'BRICK',
+            '3' => 'MONOLITH', 
+            '4' => 'MONOBRICK',
+            '5' => 'BLOCK',
+            '6' => 'WOOD',
+            '7' => '??', //сталинский
+            '8' => '??', //каркасно-щитовой
+            '9' => 'OLD_FUND'
+        ];
+
+
+        return isset($array[$material_id]) ? $array[$material_id] : 'undefinded';
+    }
+
+    /**
+     * Метод возвращает тип ремонта в соответствии с классификацией zipal.ru:
+     * COSMETIC -   Косметический
+     * EURO	    -   Евростандарт
+     * NONE	    -   Под отделку
+     * AUTHOR   -   Авторский
+     * 
+     * На вход принимается значение condition_id из БД олбъекта
+     * 1    -   косметический
+     * 2    -   евро
+     * 3    -   дизайнерский
+     * 4    -   отсутствует
+     * 5    -   капитальный
+     * 
+     * @param integer $condition_id
+     * @return string
+     */
+    private function getRenovationType($condition_id){
+        $result = 'undefinded';
+        switch($condition_id){
+            case '1':
+                $result = 'COSMETIC';
+                break;
+            case '2':
+            case '5':
+                $result = 'EURO';
+                break;
+            case '3':
+                $result = 'AUTHOR';
+                break;
+            case '4':
+                $result = 'NONE';
+        }
+
+        return $result;
+    }
+
+    /**
+     * Метод возвращает тип санузла в соответствии со спецификацией zipal.ru
+     * На вход принимает объект объявления
+     * 
+     * @param AnpProperties $object
+     * @return string;
+     */
+    private function getToiletType(AnpProperties $object){
+        $wcs_count = (int)$object->separateWcsCount + (int)$object->combinedWcsCount;
+
+        $toilet = false;
+        if($wcs_count > 1){
+            $toilet = $wcs_count == 2 ? 'TWO' : $wcs_count == 3 ? 'THREE' : $wcs_count == 4 ? 'FOUR' : false;
+        }
+
+        if($toilet === false && $object->separateWcsCount != '0')
+            $toilet = 'SEPARATED';
+        elseif($toilet === false && $object->combinedWcsCount != '0')
+            $toilet = 'JOINED';
+        return $toilet;
+    }
+
+    /**
+     * Метод возвращает тип балкона в соответствии со спецификацией zipal.ru
+     * На вход принимает объект объявления. Если в объявлении есть и балкон и лоджия - метод возвращает false
+     * 
+     * @param AnpProperties $object
+     * @return mixed
+     */
+    private function getBalcony(AnpProperties $object){
+        if($object->balconiesCount != '0' && $object->loggiasCount != '0')
+            return false;
+        else{
+            if($object->balconiesCount != '0')
+                return 'BALCONY';
+            elseif($object->loggiasCount != '0')
+                return 'LOGGIA';
+            else
+                return false;
+        }
     }
 }
