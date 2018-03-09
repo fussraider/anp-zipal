@@ -157,6 +157,134 @@ class GenerateXmlFeedController{
                     }
                 }
 
+                if($object->transaction_type == 'SELLING'){
+                    if($object->ipoteka == '1'){
+                        $specific->setAttribute(['mortgage' => 'true']);
+                    }
+
+                    if(!empty($object->name_comp)){
+                        $specific->setAttribute(['buildingName' => $object->name_comp]);
+                    }
+
+                    if(!empty($object->amenities)){
+                        //отрезаем последний и первый символ тире в строке
+                        $amentites = mb_substr($object->amenities, 0, -1);
+                        $amentites = mb_substr($amentites, 1);
+                        $feature_arr = explode('-', $amentites);
+
+                        $features = [];
+                        /**
+                         * INTERNET - 7, TELEPHONE - 6, TV - 27, INVALIDS - ?, ELEVATOR - column, 
+                         * SERVICE_ELEVATOR - column, CONCIERGE - 13, GUARDS = 22, RUBBISH_CHUTE - 12,
+                         *  GAS - 10, FENCING - ?
+                        */
+
+                        if($object->buildingPassengerLiftsCount != '0'){
+                            $features[] = 'ELEVATOR';
+                        }
+                        if($object->buildingCargoLiftsCount != '0'){
+                            $features[] = 'SERVICE_ELEVATOR';
+                        }
+                        foreach($feature_arr as $f){
+                            if($f == '3')
+                                $specific->setAttribute(['credit' => 'true']);
+                            if($f == '7')
+                                $features[] = 'INTERNET';
+                            if($f == '6')
+                                $features[] = 'TELEPHONE';
+                            if($f == '27')
+                                $features[] = 'TV';
+                            if($f == '13')
+                                $features[] = 'CONCIERGE';
+                            if($f == '22')
+                                $features[] = 'GUARDS';
+                            if($f == '12')
+                                $features[] = 'RUBBISH_CHUTE';
+                            if($f == '10')
+                                $features[] = 'GAS';
+                        }
+
+                        if(count($features)){
+                            foreach($features as $f){
+                                $specific->addChild('feature', $f);
+                            }
+                        }
+                    }
+                }
+
+                if($object->transaction_type == 'RENTING'){
+                    if(!empty($object->amenities)){
+                        //отрезаем последний и первый символ тире в строке
+                        $amentites = mb_substr($object->amenities, 0, -1);
+                        $amentites = mb_substr($amentites, 1);
+                        $feature_arr = explode('-', $amentites);
+
+                        $features = [];
+                        /**
+                         * INTERNET - 7, TELEPHONE - 6, TV - 27, INVALIDS - ?, ELEVATOR - column, 
+                         * SERVICE_ELEVATOR - column, CONCIERGE - 13, GUARDS = 22, RUBBISH_CHUTE - 12, 
+                         * GAS - 10, FENCING - ?, WASHING_MACHINE - 31, FURNITURE - 41,30, FRIDGE - 32, 
+                         * WIRELESS_INTERNET - 7, WITH_PETS - 36, WITH_CHILDREN - 35, CONDITIONER - 32
+                        */
+
+                        if($object->buildingPassengerLiftsCount != '0'){
+                            $features[] = 'ELEVATOR';
+                        }
+                        if($object->buildingCargoLiftsCount != '0'){
+                            $features[] = 'SERVICE_ELEVATOR';
+                        }
+                        foreach($feature_arr as $f){
+                            if($f == '31')
+                                $features[] = 'WASHING_MACHINE';
+                            if($f == '41' || $f == '30')
+                                $features[] = 'FURNITURE';
+                            if($f == '32')
+                                $features[] = 'FRIDGE';
+                            if($f == '7')
+                                $features[] = 'WIRELESS_INTERNET';
+                            if($f == '36')
+                                $features[] = 'WITH_PETS';
+                            if($f == '35')
+                                $features[] = 'WITH_CHILDREN';
+                            if($f == '32')
+                                $features[] = 'CONDITIONER';
+                            if($f == '7')
+                                $features[] = 'INTERNET';
+                            if($f == '6')
+                                $features[] = 'TELEPHONE';
+                            if($f == '27')
+                                $features[] = 'TV';
+                            if($f == '13')
+                                $features[] = 'CONCIERGE';
+                            if($f == '22')
+                                $features[] = 'GUARDS';
+                            if($f == '12')
+                                $features[] = 'RUBBISH_CHUTE';
+                            if($f == '10')
+                                $features[] = 'GAS';
+                        }
+
+                        if(count($features)){
+                            if(count($features)){
+                                foreach($features as $f){
+                                    $specific->addChild('feature', $f);
+                                }
+                            }
+                        }
+                    }
+                }
+
+            }
+            elseif($obj_request_type == 'HouseSellRequestType' || $obj_request_type == 'HouseRentRequestType'){
+                $specific->setAttribute([
+                    'distance' => (int)$object->DistanceToCity,
+                    'burden' => $this->isBurden($object->amenities),
+                    'electricity' => $this->isElectricity($object->amenities),
+                    'gas' => $this->isGas($object->amenities),
+                    'plumbing' => $this->plumping($object->water_on_item),
+                    'sewerage' => 'CESSPOOL',   // отсутствует поле в БД для этого параметра, есть только флаг наличия
+                    'relief' => 'FLAT' //отсутствует поле в БД для этого параметра
+                ]);
             }
 
             $root->addChild($obj);
@@ -494,4 +622,113 @@ class GenerateXmlFeedController{
                 return false;
         }
     }
+
+    /**
+     * Метод возвращает значение для параметра "burden" проверяя наличие флага "Обременение"
+     * число 5 в поле "amenities" БД. На вход принимает строку поля "amenities"
+     * 
+     * @param string $aments
+     * @return boolean
+     */
+    private function isBurden($aments){
+        if(!empty($aments)){
+            //отрезаем последний и первый символ тире в строке
+            $amentites = mb_substr($object->amenities, 0, -1);
+            $amentites = mb_substr($amentites, 1);
+            $feature_arr = explode('-', $amentites);
+
+            if(in_array('5', $feature_arr))
+                return 'true';
+            else
+                return 'false';
+        }
+        else
+            return 'false';
+    }
+
+    /**
+     * Метод возвращает значение для параметра "electricity" проверяя наличие флага "Электричество"
+     * число 9 в поле "amenities" БД. На вход принимает строку поля "amenities"
+     * 
+     * @param string $aments
+     * @return string
+     */
+    private function isElectricity($aments){
+        if(!empty($aments)){
+            //отрезаем последний и первый символ тире в строке
+            $amentites = mb_substr($object->amenities, 0, -1);
+            $amentites = mb_substr($amentites, 1);
+            $feature_arr = explode('-', $amentites);
+
+            if(in_array('9', $feature_arr))
+                return 'YES';
+            else
+                return 'NO';
+        }
+        else
+            return 'NO';
+    }
+
+    /**
+     * Метод возвращает значение для параметра "gas" проверяя наличие флага "газ"
+     * число 10 в поле "amenities" БД. На вход принимает строку поля "amenities"
+     * 
+     * @param string $aments
+     * @return string
+     */
+    private function isGas($aments){
+        if(!empty($aments)){
+            //отрезаем последний и первый символ тире в строке
+            $amentites = mb_substr($object->amenities, 0, -1);
+            $amentites = mb_substr($amentites, 1);
+            $feature_arr = explode('-', $amentites);
+
+            if(in_array('10', $feature_arr))
+                return 'YES';
+            else
+                return 'NO';
+        }
+        else
+            return 'NO';
+    }
+
+    /**
+     * Метод возвращает значение "plumping" по спецификации zipal.ru по полю "water_on_item" из БД объекта,
+     * на вход принимает значение поля "water_on_item"
+     * 
+     * NO	    Отсутствует
+     * CENTRAL	Центральное
+     * HOLE	    Скважина
+     * WELL	    Колодец/колонка
+     * BORDER	По границе
+     * 
+     * @param integer $water
+     * @return string
+     */
+    private function plumping($water){
+        switch($water){
+            case '0':
+            case '4':
+                $res = 'NO';
+                break;
+            case '1':
+                $res = 'CENTRAL';
+                break;
+            case '2':
+                $res = 'HOLE';
+                break;
+            case '3':
+                $res = 'WELL';
+                break;
+            case '5':
+                $res = 'BORDER';
+                break;
+            default:
+                $res = 'NO';
+                break;
+        }
+
+        return $res;
+    }
+
 }
